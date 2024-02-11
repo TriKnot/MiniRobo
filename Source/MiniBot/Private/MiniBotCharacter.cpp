@@ -9,6 +9,7 @@
 #include "Components/SphereComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/SpringArmComponent.h"
+#include "Kismet/KismetSystemLibrary.h"
 
 AMiniBotCharacter::AMiniBotCharacter()
 {
@@ -88,7 +89,7 @@ void AMiniBotCharacter::BeginPlay()
 	}
 	StepCenter /= Legs.Num();
 
-	StartRotationVector = StepCenter;
+	LegStartPositionCenter = StepCenter;
 }
 
 
@@ -96,55 +97,31 @@ void AMiniBotCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 	
+	// Set Step Offset for each leg based on move direction
 	const FVector MoveDirection = GetCharacterMovement()->GetLastInputVector();
-
+	
 	for (const TObjectPtr<UIKLegComponent> Leg : Legs)
 	{
-		// Set Step Offset for each leg based on move direction
 		Leg->SetStepOffset(MoveDirection);
 	}
 
-	// Rotate BodyMesh yaw to controller yaw
-	FRotator DesiredRotation = Controller->GetControlRotation();
-
-	DesiredRotation.Pitch = 0.0f;
-	DesiredRotation.Roll = 0.0f;
-
-	//BodyMesh->SetWorldRotation(DesiredRotation);
-
-	
+	// Move up and down based on leg position
 	FVector CenterLegLocation = FVector::ZeroVector;
+	FVector StepTargetCenter = FVector::ZeroVector;
 	for (const TObjectPtr<UIKLegComponent> Leg : Legs)
 	{
-		CenterLegLocation += Leg->GetEndEffectorRelativeLocation();
+		CenterLegLocation += Leg->GetEndEffectorLocation();
+		StepTargetCenter += Leg->GetStepTargetLocation();
 	}
 
-	CenterLegLocation /= Legs.Num();
+	const float HeightOffset = (CenterLegLocation.Z - StepTargetCenter.Z) / 2.0f;
+	TargetBodyZ = BodyMesh->GetRelativeLocation().Z + HeightOffset;
 
+	// Smoothly interpolate the current Z position to the target Z position
+	FVector NewLocation = BodyMesh->GetRelativeLocation();
+	NewLocation.Z = FMath::FInterpTo(BodyMesh->GetRelativeLocation().Z, TargetBodyZ, DeltaTime, 1.0f / SmoothTime);
 	
-	
-	// // Move the body to the center of the legs
-	// UKismetSystemLibrary::DrawDebugSphere(this, GetActorLocation() + CenterLegLocation, 5.0f, 12, FLinearColor::Green, 0.0f, 0.0f);
-	// UKismetSystemLibrary::DrawDebugSphere(this, GetActorLocation(), 5.0f, 12, FLinearColor::Green, 0.0f, 0.0f);
-	//
-	// // Draw an arrow from the leg center to the actor center
-	// UKismetSystemLibrary::DrawDebugArrow(this, GetActorLocation(), GetActorLocation() - CenterLegLocation.GetSafeNormal() * 100.0f, 50.0f, FLinearColor::Green, 0.0f, 0.0f);
-	//
-	//
-	// UKismetSystemLibrary::DrawDebugArrow(this, GetActorLocation(), GetActorLocation() - StartRotationVector.GetSafeNormal() * 100.0f, 50.0f, FLinearColor::Yellow, 0.0f, 0.0f);
-	//
-	// FVector Difference = CenterLegLocation.GetSafeNormal() - StartRotationVector.GetSafeNormal();
-	//
-	// UKismetSystemLibrary::DrawDebugArrow(this, GetActorLocation(), GetActorLocation() - Difference.GetSafeNormal() * 100.0f, 50.0f, FLinearColor::Red, 0.0f, 0.0f);
-	//
-	// FRotator DesiredRotation = FQuat::FindBetweenVectors(FVector::UpVector, -Difference.GetSafeNormal()).Rotator();
-	//
-	// // Maintain the current yaw
-	// FRotator CurrentRotation = BodyMesh->GetComponentRotation();
-	// DesiredRotation.Yaw = CurrentRotation.Yaw;
-	// DesiredRotation.Pitch = CurrentRotation.Pitch;
-	//
-	// // BodyMesh->SetWorldRotation(DesiredRotation);
+	BodyMesh->SetRelativeLocation(NewLocation);
 }
 
 void AMiniBotCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -161,7 +138,6 @@ void AMiniBotCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCo
 		EnhancedInputComponent->BindAction(LookAction, ETriggerEvent::Triggered, this, &AMiniBotCharacter::Look);
 	}
 }
-
 
 void AMiniBotCharacter::Move(const FInputActionValue& Value)
 {

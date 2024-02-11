@@ -108,5 +108,11 @@ public:
 
 	
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "IK")
-	FVector StartRotationVector;
+	FVector LegStartPositionCenter;
+
+
+	private:
+		float TargetBodyZ = 0.0f; // Desired Z position for the body
+		float CurrentVelocityZ = 0.0f; // Used by SmoothDamp for velocity tracking
+		float SmoothTime = 0.2f; // Time to smooth the movement, adjust as needed
 };

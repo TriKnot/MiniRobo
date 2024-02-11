@@ -102,7 +102,7 @@ private:
     UPROPERTY()
     float CurrentInterpolationTime = 0.0f;
     UPROPERTY()
-    float InterpolationDuration = 0.2f;
+    float InterpolationDuration = 0.15f;
     UPROPERTY()
     FVector StartStepLocation;
     UPROPERTY()
@@ -129,10 +129,12 @@ public:
     void RegisterOtherLeg(UIKLegComponent* InLeg) { Legs.AddUnique(InLeg); }
     UFUNCTION()
     void SetStepOffset(const FVector& InDirection) const;
+    UFUNCTION()
+    FVector GetStepTargetLocation() const { return StepTarget->GetComponentLocation(); }
 
     UFUNCTION()
-    FVector GetEndEffectorRelativeLocation() const { return  Bones.Last().Transform.GetLocation() - GetComponentLocation(); }
+    FVector GetEndEffectorLocation() const { return  Bones.Last().Transform.GetLocation(); }
     UFUNCTION()
     FVector GetStepTargetStartOffset() const { return StepTargetStartOffset; }
-    
+
 };
