@@ -111,7 +111,12 @@ private:
     FVector StepTargetStartOffset;
 
 
+
 public:
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "IK")
+    float StepHeight = 25.0f;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "IK")
+    float StepEaseCurveExponent = 2.0f;
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "IK")
     TArray<TObjectPtr<UIKLegComponent>> Legs;
     UFUNCTION()

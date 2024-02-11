@@ -227,47 +227,46 @@ void UIKLegComponent::MoveStepTarget(float DeltaTime)
 {
 	if (!StepTarget) return;
 
-	if (CurrentInterpolationTime == 0.0f) // Check if interpolation needs to be started
+	if (CurrentInterpolationTime == 0.0f) // Check if interpolation needs to be started or if it's already started
 	{
-		
 		// Line Trace down to find the ground
 		FHitResult HitResult;
 		const FVector StartLocation = StepTarget->GetComponentLocation() + FVector::UpVector * TotalLength * MaxStepHeighPercentage;
 		const FVector EndLocation = StepTarget->GetComponentLocation() + FVector::DownVector * TotalLength * MaxStepHeighPercentage;
 		if(UKismetSystemLibrary::LineTraceSingle(GetWorld(), StartLocation, EndLocation, ETraceTypeQuery::TraceTypeQuery1, false, TArray<AActor*>(), EDrawDebugTrace::None, HitResult, true))
 		{
-			// Set the end effector target location to the hit location
 			TargetStepLocation = HitResult.Location;
 		}
-		else
+		else // If no ground is found, set the target location to the step target's location TODO: This should be handled differently
 		{
-			// Set the end effector target location to the step target's location
 			TargetStepLocation = StepTarget->GetComponentLocation();
 		}
 		StartStepLocation = EndEffectorTargetLocation; // Set the start location for interpolation
-		bIsMovingStepTarget = true; // Start moving the step target
+		bIsMovingStepTarget = true; 
 	}
-
-	// Increment elapsed time
+	
 	CurrentInterpolationTime += DeltaTime;
 
-	// Calculate the normalized interpolation factor (Alpha) between 0 and 1
-	float Alpha = FMath::Clamp(CurrentInterpolationTime / InterpolationDuration, 0.0f, 1.0f);
+	const float Alpha = FMath::Clamp(CurrentInterpolationTime / InterpolationDuration, 0.0f, 1.0f);
 
-	// Apply easing to Alpha to make it slower at the beginning and end
-	float EasedAlpha = FMath::InterpEaseInOut(0.0f, 1.0f, Alpha, 2.0f); // The last parameter controls the steepness of the curve
+	// Lerp between the start and target locations using the eased alpha
+	const float EasedHorizontalAlpha = FMath::InterpEaseInOut(0.0f, 1.0f, Alpha, StepEaseCurveExponent); 
+	FVector HorizontalLocation = FMath::Lerp(StartStepLocation, TargetStepLocation, EasedHorizontalAlpha);
 
-	// Interpolate between the start location and the step target's current location using the eased Alpha
-	EndEffectorTargetLocation = FMath::Lerp(StartStepLocation, TargetStepLocation, EasedAlpha);
-
+	// Calculate the vertical offset using a sine wave
+	float VerticalOffset = FMath::Sin(Alpha * PI) * StepHeight;
+	FVector FinalLocation = HorizontalLocation + FVector(0, 0, VerticalOffset);
+	
+	// Update the end effector target location with the new position, including the vertical offset
+	EndEffectorTargetLocation = FinalLocation;
+	
 	// Reset interpolation time if the target is reached or exceeded
 	if (Alpha >= 1.0f)
 	{
-		CurrentInterpolationTime = 0.0f; // Reset for the next movement
-		bIsMovingStepTarget = false; // Stop moving the step target
+		CurrentInterpolationTime = 0.0f; 
+		bIsMovingStepTarget = false; 
 	}
 }
-
 
 bool UIKLegComponent::ShouldMoveStepTarget()
 {
