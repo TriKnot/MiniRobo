@@ -119,8 +119,14 @@ void AMiniBotCharacter::Move(const FInputActionValue& Value)
 		const FRotator ControlRotation = Controller->GetControlRotation();
 
 		// Add control rotation to movement input
-		const FVector ForwardVector = FRotationMatrix(ControlRotation).GetScaledAxis(EAxis::X);
-		const FVector RightVector = FRotationMatrix(ControlRotation).GetScaledAxis(EAxis::Y);
+		FVector ForwardVector = FRotationMatrix(ControlRotation).GetScaledAxis(EAxis::X);
+		FVector RightVector = FRotationMatrix(ControlRotation).GetScaledAxis(EAxis::Y);
+
+		ForwardVector.Z = 0.0f;
+		RightVector.Z = 0.0f;
+
+		ForwardVector.Normalize();
+		RightVector.Normalize();
 		
 		AddMovementInput(ForwardVector, MovementVector.Y);
 		AddMovementInput(RightVector, MovementVector.X);
