@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/SceneComponent.h"
+#include "Components/SphereComponent.h"
 #include "IKLegComponent.generated.h"
 
 class USphereComponent;
@@ -128,4 +129,10 @@ public:
     void RegisterOtherLeg(UIKLegComponent* InLeg) { Legs.AddUnique(InLeg); }
     UFUNCTION()
     void SetStepOffset(const FVector& InDirection) const;
+
+    UFUNCTION()
+    FVector GetEndEffectorRelativeLocation() const { return  Bones.Last().Transform.GetLocation() - GetComponentLocation(); }
+    UFUNCTION()
+    FVector GetStepTargetStartOffset() const { return StepTargetStartOffset; }
+    
 };

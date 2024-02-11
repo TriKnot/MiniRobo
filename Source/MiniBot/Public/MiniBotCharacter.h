@@ -72,6 +72,11 @@ public:
 
 public:
 
+	
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	UStaticMeshComponent* BodyMesh;
+
+	
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "IK")
 	USceneComponent* LegRoot;
 
@@ -100,5 +105,8 @@ public:
 	TObjectPtr<USphereComponent> LegPoleFrontLeft;
 
 	void SetupLegs();
+
 	
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "IK")
+	FVector StartRotationVector;
 };

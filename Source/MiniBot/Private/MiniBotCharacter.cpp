@@ -20,7 +20,7 @@ AMiniBotCharacter::AMiniBotCharacter()
 		
 	// Don't rotate when the controller rotates. Let that just affect the camera.
 	bUseControllerRotationPitch = false;
-	bUseControllerRotationYaw = false;
+	bUseControllerRotationYaw = true;
 	bUseControllerRotationRoll = false;
 
 	// Configure character movement
@@ -52,6 +52,9 @@ AMiniBotCharacter::AMiniBotCharacter()
 	// Note: The skeletal mesh and anim blueprint references on the Mesh component (inherited from Character) 
 	// are set in the derived blueprint asset named ThirdPersonCharacter (to avoid direct content references in C++)
 
+	BodyMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BodyMesh"));
+	BodyMesh->SetupAttachment(RootComponent);
+	
 	SetupLegs();
 
 }
@@ -77,19 +80,71 @@ void AMiniBotCharacter::BeginPlay()
 	LegFrontRight->RegisterOtherLegs({LegBack, LegFrontLeft});
 	LegFrontLeft->RegisterOtherLegs({LegBack, LegFrontRight});
 
+	// Save start rotation offset
+	FVector StepCenter = FVector::ZeroVector;
+	for (const TObjectPtr<UIKLegComponent> Leg : Legs)
+	{
+		StepCenter += Leg->GetStepTargetStartOffset();
+	}
+	StepCenter /= Legs.Num();
+
+	StartRotationVector = StepCenter;
 }
 
 
 void AMiniBotCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
-
-	// Get Move Direction and velocity from character move component
+	
 	const FVector MoveDirection = GetCharacterMovement()->GetLastInputVector();
+
 	for (const TObjectPtr<UIKLegComponent> Leg : Legs)
 	{
+		// Set Step Offset for each leg based on move direction
 		Leg->SetStepOffset(MoveDirection);
 	}
+
+	// Rotate BodyMesh yaw to controller yaw
+	FRotator DesiredRotation = Controller->GetControlRotation();
+
+	DesiredRotation.Pitch = 0.0f;
+	DesiredRotation.Roll = 0.0f;
+
+	//BodyMesh->SetWorldRotation(DesiredRotation);
+
+	
+	FVector CenterLegLocation = FVector::ZeroVector;
+	for (const TObjectPtr<UIKLegComponent> Leg : Legs)
+	{
+		CenterLegLocation += Leg->GetEndEffectorRelativeLocation();
+	}
+
+	CenterLegLocation /= Legs.Num();
+
+	
+	
+	// // Move the body to the center of the legs
+	// UKismetSystemLibrary::DrawDebugSphere(this, GetActorLocation() + CenterLegLocation, 5.0f, 12, FLinearColor::Green, 0.0f, 0.0f);
+	// UKismetSystemLibrary::DrawDebugSphere(this, GetActorLocation(), 5.0f, 12, FLinearColor::Green, 0.0f, 0.0f);
+	//
+	// // Draw an arrow from the leg center to the actor center
+	// UKismetSystemLibrary::DrawDebugArrow(this, GetActorLocation(), GetActorLocation() - CenterLegLocation.GetSafeNormal() * 100.0f, 50.0f, FLinearColor::Green, 0.0f, 0.0f);
+	//
+	//
+	// UKismetSystemLibrary::DrawDebugArrow(this, GetActorLocation(), GetActorLocation() - StartRotationVector.GetSafeNormal() * 100.0f, 50.0f, FLinearColor::Yellow, 0.0f, 0.0f);
+	//
+	// FVector Difference = CenterLegLocation.GetSafeNormal() - StartRotationVector.GetSafeNormal();
+	//
+	// UKismetSystemLibrary::DrawDebugArrow(this, GetActorLocation(), GetActorLocation() - Difference.GetSafeNormal() * 100.0f, 50.0f, FLinearColor::Red, 0.0f, 0.0f);
+	//
+	// FRotator DesiredRotation = FQuat::FindBetweenVectors(FVector::UpVector, -Difference.GetSafeNormal()).Rotator();
+	//
+	// // Maintain the current yaw
+	// FRotator CurrentRotation = BodyMesh->GetComponentRotation();
+	// DesiredRotation.Yaw = CurrentRotation.Yaw;
+	// DesiredRotation.Pitch = CurrentRotation.Pitch;
+	//
+	// // BodyMesh->SetWorldRotation(DesiredRotation);
 }
 
 void AMiniBotCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -158,7 +213,7 @@ void AMiniBotCharacter::SetupLegs()
 
 	// Create the leg root
 	LegRoot = CreateDefaultSubobject<USceneComponent>(TEXT("LegRoot"));
-	LegRoot->SetupAttachment(GetCapsuleComponent());
+	LegRoot->SetupAttachment(BodyMesh);
 	LegRoot->SetRelativeLocation(FVector(0.0f, 0.0f, 0.0f));
 	
 	// Create legs

@@ -1,22 +1,11 @@
 ﻿#include "IKLegComponent.h"
 
 #include "Components/SphereComponent.h"
-#include "Kismet/KismetMathLibrary.h"
 #include "Kismet/KismetSystemLibrary.h"
 
 UIKLegComponent::UIKLegComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
-	
-	// StepTarget = CreateDefaultSubobject<USphereComponent>(TEXT("Target"));
-	// StepTarget->SetupAttachment(this);
-	// StepTarget->SetSphereRadius(5.0f);
-	// StepTarget->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	//
-	// Pole = CreateDefaultSubobject<USphereComponent>(TEXT("Pole"));
-	// Pole->SetupAttachment(this);
-	// Pole->SetSphereRadius(5.0f);
-	// Pole->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 }
 
 void UIKLegComponent::BeginPlay()
@@ -167,7 +156,10 @@ void UIKLegComponent::SetStepOffset(const FVector& InDirection) const
 	// Set the step target's location
 	FVector Direction = InDirection.GetSafeNormal();
 	Direction.Z = 0.0f;
-	StepTarget->SetWorldLocation(GetComponentTransform().GetLocation() + StepTargetStartOffset + Direction * StepDistance * 2);
+
+	Direction = GetComponentTransform().InverseTransformVectorNoScale(Direction);
+
+	StepTarget->SetRelativeLocation(StepTargetStartOffset + Direction * StepDistance * 2.0f);
 }
 
 void UIKLegComponent::DrawDebug()
@@ -233,7 +225,7 @@ void UIKLegComponent::MoveStepTarget(float DeltaTime)
 		FHitResult HitResult;
 		const FVector StartLocation = StepTarget->GetComponentLocation() + FVector::UpVector * TotalLength * MaxStepHeighPercentage;
 		const FVector EndLocation = StepTarget->GetComponentLocation() + FVector::DownVector * TotalLength * MaxStepHeighPercentage;
-		if(UKismetSystemLibrary::LineTraceSingle(GetWorld(), StartLocation, EndLocation, ETraceTypeQuery::TraceTypeQuery1, false, TArray<AActor*>(), EDrawDebugTrace::None, HitResult, true))
+		if(UKismetSystemLibrary::LineTraceSingle(GetWorld(), StartLocation, EndLocation, ETraceTypeQuery::TraceTypeQuery1, false, TArray<AActor*>({GetOwner()}), EDrawDebugTrace::None, HitResult, true))
 		{
 			TargetStepLocation = HitResult.Location;
 		}
