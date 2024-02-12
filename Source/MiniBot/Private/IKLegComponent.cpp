@@ -1,5 +1,4 @@
 ﻿#include "IKLegComponent.h"
-
 #include "Components/SphereComponent.h"
 #include "Kismet/KismetSystemLibrary.h"
 
@@ -12,51 +11,54 @@ void UIKLegComponent::BeginPlay()
 {
 	Super::BeginPlay();
 
+	// Set the start offset for the step target relative to the leg root
 	StepTargetStartOffset = StepTarget->GetComponentLocation() - GetComponentTransform().GetLocation();
 }
 
 void UIKLegComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+	// At least 2 bones are required for the leg to function
 	if(Bones.Num() < 2)
 	{
 		return;
 	}
 
-	if(bIsMovingStepTarget || ShouldMoveStepTarget())
+	// Check if the step target should be moved or if it's already being moved
+	if( bIsMovingStepTarget || ShouldMoveStepTarget() )
 	{
 		MoveStepTarget(DeltaTime);
 	}
-	
+
+	// Solve the IK
 	SolveIK();
-	
+
+	// Draw Debug
 	DrawDebug();
 }
 
-void UIKLegComponent::Init(USphereComponent* InStepTarget, USphereComponent* InPole)
+void UIKLegComponent::Initialize(USphereComponent* InStepTarget, USphereComponent* InPole, TArray<TObjectPtr<UIKLegComponent>> InOtherLegs)
 {
+	// Reset 
 	Bones.Empty();
+	TotalLength = 0.0f;
+	
 	for (int32 i = 0; i < BoneCount + 1 ; i++) // +1 for the root bone
 	{
 		FBone Bone;
+		Bone.BoneLength = (i == 0) ? 0 : BoneLength; // Root bone has no length
+		Bone.Transform = GetComponentTransform();
 		Bones.Add(Bone);
-		if (i == 0)
-		{
-			Bones[i].BoneLength = 0;
-		}
-		else
-		{
-			Bones[i].BoneLength = BoneLength;
-		}
-		Bones[i].Transform = GetComponentTransform();
-		TotalLength += Bones[i].BoneLength;
+		TotalLength += Bone.BoneLength;
 	}
 
+	// Initialize other properties
 	BonePositions.SetNum(Bones.Num());
 	BoneRotations.SetNum(Bones.Num());
-
 	Pole = InPole;
 	StepTarget = InStepTarget;
+	OtherLegs = InOtherLegs;
 }
 
 void UIKLegComponent::SolveIK()
@@ -140,9 +142,8 @@ void UIKLegComponent::MoveTowardsPole()
 	{
 		FVector CurrentJointPosition = BonePositions[i];
 		FVector TowardsPole = PolePosition - CurrentJointPosition;
-	
-		// Decide how far you want to move towards the pole
-		const float MoveDistanceFraction = 0.01f; 
+		
+		const float MoveDistanceFraction = 0.01f; // 0.01 = 1% of the distance to the pole
 		FVector MoveDirection = TowardsPole.GetSafeNormal();
 		const FVector NewPosition = CurrentJointPosition + MoveDirection * TowardsPole.Size() * MoveDistanceFraction;
 	
@@ -151,7 +152,7 @@ void UIKLegComponent::MoveTowardsPole()
 	}
 }
 
-void UIKLegComponent::SetStepOffset(const FVector& InDirection) const
+void UIKLegComponent::SetStepDirection(const FVector& InDirection) const
 {
 	// Set the step target's location
 	FVector Direction = InDirection.GetSafeNormal();
@@ -159,13 +160,13 @@ void UIKLegComponent::SetStepOffset(const FVector& InDirection) const
 
 	Direction = GetComponentTransform().InverseTransformVectorNoScale(Direction);
 
-	StepTarget->SetRelativeLocation(StepTargetStartOffset + Direction * StepDistance * 2.0f);
+	StepTarget->SetRelativeLocation(StepTargetStartOffset + Direction * StepDistance);
 }
 
 void UIKLegComponent::DrawDebug()
 {
 	// Draw the Joint Positions
-	if(bDrawDebug)
+	if(bDrawJoints)
 	{
 		for(int32 i = 0; i < Bones.Num(); i++)
 		{
@@ -183,36 +184,41 @@ void UIKLegComponent::DrawDebug()
 			}
 		}
 	}
-	
-	// Draw the bones
-	for(int32 i = 0; i < Bones.Num(); i++)
+	if(bDrawBones)
 	{
-		FVector Start = Bones[i].Transform.GetLocation();
-		FVector End = Start + (Bones[i].Transform.GetRotation().GetForwardVector() * Bones[i].BoneLength);
-		FColor Color;
-		if(i == 0)
+		// Draw the bones
+		for(int32 i = 0; i < Bones.Num(); i++)
 		{
-			Color = FColor::Red;
+			FVector Start = Bones[i].Transform.GetLocation();
+			FVector End = Start + (Bones[i].Transform.GetRotation().GetForwardVector() * Bones[i].BoneLength);
+			FColor Color;
+			if(i == 0)
+			{
+				Color = FColor::Red;
+			}
+			else if(i == Bones.Num() - 1)
+			{
+				Color = FColor::Green;
+			}
+			else
+			{
+				Color = FColor::Blue;
+			}
+			UKismetSystemLibrary::DrawDebugArrow(this, Start, End, 50.0f, Color, 0.0f, 0.0f);
 		}
-		else if(i == Bones.Num() - 1)
-		{
-			Color = FColor::Green;
-		}
-		else
-		{
-			Color = FColor::Blue;
-		}
-		UKismetSystemLibrary::DrawDebugArrow(this, Start, End, 50.0f, Color, 0.0f, 0.0f);
 	}
 	
 	// Draw the end effector target
-	DrawDebugSphere(GetWorld(), EndEffectorTargetLocation, 5.0f, 12, FColor::Yellow, false, 0.0f);
+	if(bDrawEndEffectorTarget)
+		UKismetSystemLibrary::DrawDebugSphere(GetWorld(), EndEffectorTargetLocation, 5.0f, 12, FColor::Yellow, false, 0.0f);
 
 	// Draw the step target
-	DrawDebugSphere(GetWorld(), StepTarget->GetComponentLocation(), 5.0f, 12, FColor::Purple, false, 0.0f);
+	if(bDrawStepTarget)
+		UKismetSystemLibrary::DrawDebugSphere(GetWorld(), StepTarget->GetComponentLocation(), 5.0f, 12, FColor::Purple, false, 0.0f);
 
 	// Draw step distance around the step target
-	//DrawDebugCircle(GetWorld(), StepTarget->GetComponentLocation(), StepDistance, 12, FColor::Purple, false, 0.0f, 0, 5.0f, FVector(0, 1, 0), FVector(1, 0, 0), false);
+	if(bDrawStepDistance)
+		UKismetSystemLibrary::DrawDebugCircle(GetWorld(), StepTarget->GetComponentLocation(), StepDistance, 12, FColor::White,  0.0f, 1.0f, FVector(0, 1, 0), FVector(1, 0, 0), false);
 }
 
 void UIKLegComponent::MoveStepTarget(float DeltaTime)
@@ -229,9 +235,9 @@ void UIKLegComponent::MoveStepTarget(float DeltaTime)
 		{
 			TargetStepLocation = HitResult.Location;
 		}
-		else // If no ground is found, set the target location to the step target's location TODO: This should be handled differently
+		else // If no ground is found, stretch it downwards TODO: This should be handled differently
 		{
-			TargetStepLocation = StepTarget->GetComponentLocation();
+			TargetStepLocation = EndLocation;
 		}
 		StartStepLocation = EndEffectorTargetLocation; // Set the start location for interpolation
 		bIsMovingStepTarget = true; 
@@ -263,7 +269,7 @@ void UIKLegComponent::MoveStepTarget(float DeltaTime)
 bool UIKLegComponent::ShouldMoveStepTarget()
 {
 	// Check that no other legs are currently moving the step target
-	for (const TObjectPtr<UIKLegComponent> OtherLeg : Legs)
+	for (const TObjectPtr<UIKLegComponent> OtherLeg : OtherLegs)
 	{
 		if(OtherLeg->IsMovingStepTarget())
 		{
