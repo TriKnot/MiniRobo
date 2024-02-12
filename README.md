@@ -9,3 +9,4 @@ The project showcases dynamic body positioning, smooth motion integration, and c
 - **Dynamic Step Targeting:** Algorithm for dynamic step placement based on terrain and movement.
 - **Smooth Dynamics Integrator:** Utilizes a custom component for smooth transitions and movements.
 
+- Created using Unreal Engine version *5.3.2*
