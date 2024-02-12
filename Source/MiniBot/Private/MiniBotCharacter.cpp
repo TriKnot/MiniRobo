@@ -3,13 +3,14 @@
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "IKLegComponent.h"
+#include "SmoothDynamicsIntegrator.h"
 #include "Camera/CameraComponent.h"
 #include "Components/ArrowComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SphereComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/SpringArmComponent.h"
-#include "Kismet/KismetSystemLibrary.h"
+
 
 AMiniBotCharacter::AMiniBotCharacter()
 {
@@ -49,10 +50,6 @@ AMiniBotCharacter::AMiniBotCharacter()
 	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName); // Attach the camera to the end of the boom and let the boom adjust to match the controller orientation
 	FollowCamera->bUsePawnControlRotation = false; // Camera does not rotate relative to arm
 	
-
-	// Note: The skeletal mesh and anim blueprint references on the Mesh component (inherited from Character) 
-	// are set in the derived blueprint asset named ThirdPersonCharacter (to avoid direct content references in C++)
-
 	BodyMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BodyMesh"));
 	BodyMesh->SetupAttachment(RootComponent);
 	
@@ -64,64 +61,76 @@ void AMiniBotCharacter::BeginPlay()
 {
 	Super::BeginPlay();
 
-	if(Controller)
+	// Setup Enhanced Input if the Controller is available
+	APlayerController* PlayerController = Cast<APlayerController>(Controller);
+	if (PlayerController)
 	{
-		// Add Input Mapping Context
-		if (const APlayerController* PlayerController = Cast<APlayerController>(Controller))
+		UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PlayerController->GetLocalPlayer());
+		if (Subsystem && DefaultMappingContext)
 		{
-			if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PlayerController->GetLocalPlayer()))
-			{
-				Subsystem->AddMappingContext(DefaultMappingContext, 0);
-			}
+			Subsystem->AddMappingContext(DefaultMappingContext, 0); // Priority 0, adjust as needed
 		}
 	}
 
-	// Register legs
-	LegBack->RegisterOtherLegs({LegFrontRight, LegFrontLeft});
-	LegFrontRight->RegisterOtherLegs({LegBack, LegFrontLeft});
-	LegFrontLeft->RegisterOtherLegs({LegBack, LegFrontRight});
-
-	// Save start rotation offset
-	FVector StepCenter = FVector::ZeroVector;
-	for (const TObjectPtr<UIKLegComponent> Leg : Legs)
+	// Initialize the BodyIntegrator component
+	BodyIntegrator = NewObject<USmoothDynamicsIntegrator>(this, USmoothDynamicsIntegrator::StaticClass());
+	if (BodyIntegrator)
 	{
-		StepCenter += Leg->GetStepTargetStartOffset();
+		const FVector InitialBodyLocation = BodyMesh ? BodyMesh->GetRelativeLocation() : FVector::ZeroVector;
+		BodyIntegrator->Initialize(InitialBodyLocation, BodyResponseFrequency, BodyResponseDamping, BodyResponseUnderShoot);
 	}
-	StepCenter /= Legs.Num();
 
-	LegStartPositionCenter = StepCenter;
+	// Ensure that  legs are initialized
+	LegBack->Initialize(LegStepTargetBack, LegPoleBack, {LegFrontRight, LegFrontLeft});
+	LegFrontRight->Initialize(LegStepTargetFrontRight, LegPoleFrontRight, {LegBack, LegFrontLeft});
+	LegFrontLeft->Initialize(LegStepTargetFrontLeft, LegPoleFrontLeft, {LegBack, LegFrontRight});
 }
-
 
 void AMiniBotCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 	
-	// Set Step Offset for each leg based on move direction
+	// Update Step Offset for each leg based on move direction
 	const FVector MoveDirection = GetCharacterMovement()->GetLastInputVector();
-	
-	for (const TObjectPtr<UIKLegComponent> Leg : Legs)
+	for (const TObjectPtr<UIKLegComponent>& Leg : Legs)
 	{
-		Leg->SetStepOffset(MoveDirection);
+		if (Leg) 
+		{
+			Leg->SetStepDirection(MoveDirection);
+		}
 	}
 
-	// Move up and down based on leg position
+	// Calculate the center position of all legs and step targets to determine body's vertical adjustment
 	FVector CenterLegLocation = FVector::ZeroVector;
 	FVector StepTargetCenter = FVector::ZeroVector;
-	for (const TObjectPtr<UIKLegComponent> Leg : Legs)
+	const int32 LegCount = Legs.Num(); 
+	
+	for (const TObjectPtr<UIKLegComponent>& Leg : Legs)
 	{
-		CenterLegLocation += Leg->GetEndEffectorLocation();
-		StepTargetCenter += Leg->GetStepTargetLocation();
+		if (Leg)
+		{
+			CenterLegLocation += Leg->GetEndEffectorLocation();
+			StepTargetCenter += Leg->GetStepTargetLocation();
+		}
+	}
+	if (LegCount > 0) 
+	{
+		CenterLegLocation /= LegCount;
+		StepTargetCenter /= LegCount;
 	}
 
+	// Calculate the desired height offset based on leg positions
 	const float HeightOffset = (CenterLegLocation.Z - StepTargetCenter.Z) / 2.0f;
-	TargetBodyZ = BodyMesh->GetRelativeLocation().Z + HeightOffset;
+	const FVector CurrentBodyLocation = BodyMesh->GetRelativeLocation();
+	FVector TargetBodyLocation = CurrentBodyLocation;
+	TargetBodyLocation.Z += HeightOffset;
 
-	// Smoothly interpolate the current Z position to the target Z position
-	FVector NewLocation = BodyMesh->GetRelativeLocation();
-	NewLocation.Z = FMath::FInterpTo(BodyMesh->GetRelativeLocation().Z, TargetBodyZ, DeltaTime, 1.0f / SmoothTime);
-	
-	BodyMesh->SetRelativeLocation(NewLocation);
+	// Use the BodyIntegrator to smoothly transition the body's position
+	if (BodyIntegrator)
+	{
+		const FVector NewPosition = BodyIntegrator->Update(DeltaTime, TargetBodyLocation, FVector::ZeroVector);
+		BodyMesh->SetRelativeLocation(NewPosition);
+	}
 }
 
 void AMiniBotCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -141,18 +150,16 @@ void AMiniBotCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCo
 
 void AMiniBotCharacter::Move(const FInputActionValue& Value)
 {
-	if (Controller != nullptr)
+	if (Controller)
 	{
-		// Input is a Vector2D
 		const FVector2D MovementVector = Value.Get<FVector2D>();
-
-		// Get Control rotation
 		const FRotator ControlRotation = Controller->GetControlRotation();
 
-		// Add control rotation to movement input
+		// Calculate the forward and right vectors
 		FVector ForwardVector = FRotationMatrix(ControlRotation).GetScaledAxis(EAxis::X);
 		FVector RightVector = FRotationMatrix(ControlRotation).GetScaledAxis(EAxis::Y);
 
+		// Don't care about the Z axis
 		ForwardVector.Z = 0.0f;
 		RightVector.Z = 0.0f;
 
@@ -166,10 +173,8 @@ void AMiniBotCharacter::Move(const FInputActionValue& Value)
 
 void AMiniBotCharacter::Look(const FInputActionValue& Value)
 {
-
-	if (Controller != nullptr)
+	if (Controller)
 	{
-		// Input is a Vector2D
 		const FVector2D LookAxisVector = Value.Get<FVector2D>();
 		
 		// Add yaw and pitch input to controller
@@ -237,13 +242,5 @@ void AMiniBotCharacter::SetupLegs()
 	LegPoleFrontLeft->SetSphereRadius(5.0f);
 	LegPoleFrontLeft->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
-	// Initialize legs
-	LegBack->Init(LegStepTargetBack, LegPoleBack);
-	LegFrontRight->Init(LegStepTargetFrontRight, LegPoleFrontRight);
-	LegFrontLeft->Init(LegStepTargetFrontLeft, LegPoleFrontLeft);
-
-	// Register legs
-	LegBack->RegisterOtherLegs({LegFrontRight, LegFrontLeft});
-	LegFrontRight->RegisterOtherLegs({LegBack, LegFrontLeft});
-	LegFrontLeft->RegisterOtherLegs({LegBack, LegFrontRight});
 }
+
